@@ -6,7 +6,7 @@ const provider = new ethers.providers.JsonRpcProvider('https://base-rpc.publicno
 
 // Rentang nilai transfer yang dicurigai
 const min_value_to_track = ethers.utils.parseEther('0.02');
-const max_value_to_track = ethers.utils.parseEther('0.025');
+const max_value_to_track = ethers.utils.parseEther('0.16');
 const minimum_transfer_count = 3;
 const maxRetries = 3;
 const delayBetweenRetries = 1000; // in milliseconds
@@ -16,9 +16,6 @@ const suspiciousAddressesFile = 'suspicious_addresses.json';
 
 // Fungsi untuk menunggu dalam milidetik
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-
-// Set untuk melacak alamat yang telah diproses
-const processedAddresses = new Set();
 
 // Fungsi untuk memeriksa transfer dari wallet tertentu
 async function trackTransactions() {
@@ -51,8 +48,21 @@ async function fetchWithRetry(fetchFunction, retries = maxRetries) {
     throw new Error('Max retries reached');
 }
 
+// Fungsi untuk memeriksa apakah nilai-nilai transfer mirip
+function areTransfersSimilar(transfers) {
+    // const epsilon = 0.00001; // Rentang perbedaan yang diijinkan
+    const epsilon = 0.01; // Rentang perbedaan yang diijinkan
+    for (let i = 1; i < transfers.length; i++) {
+        if (Math.abs(parseFloat(transfers[i]) - parseFloat(transfers[i - 1])) > epsilon) {
+            return false;
+        }
+    }
+    return true;
+}
+
 async function checkTransactionsForValue(startBlock, endBlock) {
     const transferCount = {};
+    const suspiciousAddresses = [];
 
     for (let i = startBlock; i <= endBlock; i++) {
         console.log(`Processing block ${i}`);
@@ -69,14 +79,16 @@ async function checkTransactionsForValue(startBlock, endBlock) {
                         transferCount[tx.from] = { count: 1, transfers: [ethers.utils.formatEther(value)] };
                     }
 
-                    if (transferCount[tx.from].count >= minimum_transfer_count && !processedAddresses.has(tx.from)) {
-                        processedAddresses.add(tx.from); // Tambahkan ke set
-                        console.log(`Suspicious address detected: ${tx.from}`);
-                        console.log(`Transfers: ${transferCount[tx.from].transfers.join(', ')} ETH`);
+                    if (transferCount[tx.from].count >= minimum_transfer_count && !suspiciousAddresses.includes(tx.from)) {
+                        if (areTransfersSimilar(transferCount[tx.from].transfers)) {
+                            suspiciousAddresses.push(tx.from);
+                            console.log(`Suspicious address detected: ${tx.from}`);
+                            console.log(`Transfers: ${transferCount[tx.from].transfers.join(', ')} ETH`);
 
-                        // Update file with suspicious addresses immediately
-                        fs.appendFileSync(suspiciousAddressesFile, JSON.stringify({ address: tx.from, transfer_count: transferCount[tx.from].count, transfers: transferCount[tx.from].transfers }, null, 4) + '\n');
-                        console.log("Suspicious address saved to suspicious_addresses.json");
+                            // Update file with suspicious addresses immediately
+                            fs.appendFileSync(suspiciousAddressesFile, JSON.stringify({ address: tx.from, transfer_count: transferCount[tx.from].count, transfers: transferCount[tx.from].transfers }, null, 4) + '\n');
+                            console.log("Suspicious address saved to suspicious_addresses.json");
+                        }
                     }
                 }
             }
