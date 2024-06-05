@@ -8,7 +8,7 @@ const provider = new ethers.providers.JsonRpcProvider('https://base-rpc.publicno
 const min_value_to_track = ethers.utils.parseEther('0.02');
 const max_value_to_track = ethers.utils.parseEther('0.16');
 const minimum_transfer_count = 3;
-const epsilon = ethers.utils.parseEther('0.001'); // Allowed difference range
+const epsilon = ethers.utils.parseEther('0.0001'); // Allowed difference range
 const maxRetries = 3;
 const delayBetweenRetries = 1000; // in milliseconds
 
