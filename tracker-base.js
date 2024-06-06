@@ -1,29 +1,34 @@
 const { ethers } = require('ethers');
 const fs = require('fs');
 
-// Connect to the Base node
+// Hubungkan ke node Ethereum
 const provider = new ethers.providers.JsonRpcProvider('https://base-rpc.publicnode.com');
 
-// Suspicious transfer range
+// Rentang nilai transfer yang dicurigai
 const min_value_to_track = ethers.utils.parseEther('0.02');
 const max_value_to_track = ethers.utils.parseEther('0.16');
 const minimum_transfer_count = 3;
-const epsilon = ethers.utils.parseEther('0.0001'); // Allowed difference range
 const maxRetries = 3;
 const delayBetweenRetries = 1000; // in milliseconds
 
-// File to save results
+// File tempat menyimpan hasil
 const suspiciousAddressesFile = 'suspicious_addresses.json';
 
-// Function to wait in milliseconds
+// Fungsi untuk menunggu dalam milidetik
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-// Function to check if values are similar
-const isSimilar = (value1, value2) => {
-    return value1.sub(value2).abs().lte(epsilon);
-};
+// Fungsi untuk memeriksa apakah nilai-nilai transfer mirip
+function areTransfersSimilar(transfers) {
+    const epsilon = 0.001; // Rentang perbedaan yang diijinkan
+    for (let i = 1; i < transfers.length; i++) {
+        if (Math.abs(parseFloat(transfers[i]) - parseFloat(transfers[i - 1])) > epsilon) {
+            return false;
+        }
+    }
+    return true;
+}
 
-// Function to track transactions from a particular wallet
+// Fungsi untuk memeriksa transfer dari wallet tertentu
 async function trackTransactions() {
     let latestBlockChecked = await provider.getBlockNumber();
 
@@ -38,10 +43,10 @@ async function trackTransactions() {
         } catch (error) {
             console.error("Error in tracking loop:", error);
         }
-    }, 15000); // Check every 15 seconds
+    }, 15000); // Periksa setiap 15 detik
 }
 
-// Function to fetch data with retries
+// Fungsi untuk melakukan retry pada panggilan API
 async function fetchWithRetry(fetchFunction, retries = maxRetries) {
     for (let i = 0; i < retries; i++) {
         try {
@@ -64,16 +69,13 @@ async function checkTransactionsForValue(startBlock, endBlock) {
             const block = await fetchWithRetry(() => provider.getBlockWithTransactions(i));
 
             for (const tx of block.transactions) {
-                const value = ethers.BigNumber.from(tx.value);
+                if (!tx.to) continue; // Skip transactions without a 'to' address (non-ETH transfers)
 
-                // Only consider transactions that transfer ETH
-                if (tx.to && value.gte(min_value_to_track) && value.lte(max_value_to_track)) {
+                const value = ethers.BigNumber.from(tx.value);
+                if (value.gte(min_value_to_track) && value.lte(max_value_to_track)) {
                     if (transferCount[tx.from]) {
-                        const lastTransfer = ethers.utils.parseEther(transferCount[tx.from].transfers[transferCount[tx.from].transfers.length - 1]);
-                        if (isSimilar(lastTransfer, value)) {
-                            transferCount[tx.from].count++;
-                            transferCount[tx.from].transfers.push(ethers.utils.formatEther(value));
-                        }
+                        transferCount[tx.from].count++;
+                        transferCount[tx.from].transfers.push(ethers.utils.formatEther(value));
                     } else {
                         transferCount[tx.from] = { count: 1, transfers: [ethers.utils.formatEther(value)] };
                     }
@@ -97,11 +99,11 @@ async function checkTransactionsForValue(startBlock, endBlock) {
     }
 }
 
-// Handle clean program shutdown
+// Menangani penghentian program dengan bersih
 process.on('SIGINT', () => {
     console.log('Program stopped.');
     process.exit();
 });
 
-// Start tracking transactions
+// Mulai melacak transaksi
 trackTransactions().catch(console.error);
