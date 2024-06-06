@@ -69,7 +69,10 @@ async function checkTransactionsForValue(startBlock, endBlock) {
             const block = await fetchWithRetry(() => provider.getBlockWithTransactions(i));
 
             for (const tx of block.transactions) {
-                if (!tx.to) continue; // Skip transactions without a 'to' address (non-ETH transfers)
+                if (tx.data && tx.data !== '0x') {
+                    // Skip transactions that have input data (likely to be contract interactions, like swaps)
+                    continue;
+                }
 
                 const value = ethers.BigNumber.from(tx.value);
                 if (value.gte(min_value_to_track) && value.lte(max_value_to_track)) {
